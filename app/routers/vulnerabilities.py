@@ -10,6 +10,18 @@ from app.schemas import VulnOut, VulnCreate, VulnStatusUpdate
 router = APIRouter()
 
 
+_SORT_COLS = {
+    "title":      Vulnerability.title,
+    "severity":   Vulnerability.severity,
+    "cvss":       Vulnerability.cvss_score,
+    "vpr":        Vulnerability.vpr_score,
+    "status":     Vulnerability.status,
+    "first_seen": Vulnerability.first_seen,
+    "last_seen":  Vulnerability.last_seen,
+    "source":     Vulnerability.source,
+}
+
+
 @router.get("/")
 def list_vulns(
     page: int = Query(1, ge=1),
@@ -21,6 +33,8 @@ def list_vulns(
     asset_id: Optional[int] = None,
     host: Optional[str] = None,
     category: Optional[str] = None,  # 'vulnerability' | 'recommendation'
+    sort_by: Optional[str] = None,
+    sort_dir: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
 ):
     q = db.query(Vulnerability)
@@ -71,11 +85,10 @@ def list_vulns(
         )
 
     total = q.count()
+    sort_col = _SORT_COLS.get(sort_by, Vulnerability.cvss_score)
+    order = sort_col.asc().nulls_last() if sort_dir == "asc" else sort_col.desc().nulls_last()
     items = (
-        q.order_by(
-            Vulnerability.severity.asc(),  # alphabetical works for our severity names
-            Vulnerability.cvss_score.desc().nulls_last(),
-        )
+        q.order_by(order)
         .offset((page - 1) * per_page)
         .limit(per_page)
         .all()

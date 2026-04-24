@@ -127,7 +127,9 @@ const VulnsPage = {
 
   async load() {
     const { page, per_page, severity, status, source, search, asset_id, host, category } = this.state;
-    const params = { page, per_page, severity, status, source, search, asset_id, host, category };
+    const sort_by  = VulnsTable.sortKey  || undefined;
+    const sort_dir = VulnsTable.sortDir  || 'desc';
+    const params = { page, per_page, severity, status, source, search, asset_id, host, category, sort_by, sort_dir };
     const data = await API.get('/vulnerabilities/', params);
     this.total = data.total;
 

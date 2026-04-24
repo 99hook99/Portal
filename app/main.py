@@ -142,7 +142,28 @@ def _run_migrations():
                 conn.execute(text("ALTER TABLE nessus_config ADD COLUMN scanner_id INTEGER"))
 
         conn.commit()
+    _create_indexes()
     _backfill_identity_type()
+
+
+def _create_indexes():
+    """Create missing indexes for query performance on large datasets."""
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS ix_vuln_status      ON vulnerabilities(status)",
+        "CREATE INDEX IF NOT EXISTS ix_vuln_source      ON vulnerabilities(source)",
+        "CREATE INDEX IF NOT EXISTS ix_vuln_asset_id    ON vulnerabilities(asset_id)",
+        "CREATE INDEX IF NOT EXISTS ix_vuln_last_seen   ON vulnerabilities(last_seen)",
+        "CREATE INDEX IF NOT EXISTS ix_vuln_first_seen  ON vulnerabilities(first_seen)",
+        "CREATE INDEX IF NOT EXISTS ix_vuln_cvss        ON vulnerabilities(cvss_score)",
+        "CREATE INDEX IF NOT EXISTS ix_vuln_vpr         ON vulnerabilities(vpr_score)",
+        "CREATE INDEX IF NOT EXISTS ix_vuln_status_sev  ON vulnerabilities(status, severity)",
+        "CREATE INDEX IF NOT EXISTS ix_asset_ip         ON assets(ip_address)",
+        "CREATE INDEX IF NOT EXISTS ix_asset_last_seen  ON assets(last_seen)",
+    ]
+    with engine.connect() as conn:
+        for sql in indexes:
+            conn.execute(text(sql))
+        conn.commit()
 
 
 def _backfill_identity_type():

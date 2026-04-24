@@ -268,7 +268,10 @@ function toast(message, type = 'info') {
 
 /* ── Pagination ────────────────────────────────────────────── */
 
+const _pageCallbacks = {};
+
 function renderPagination(containerId, page, perPage, total, onPage) {
+  _pageCallbacks[containerId] = onPage;
   const totalPages = Math.ceil(total / perPage);
   const el = document.getElementById(containerId);
   if (!el || totalPages <= 1) { if (el) el.innerHTML = ''; return; }
@@ -291,12 +294,12 @@ function renderPagination(containerId, page, perPage, total, onPage) {
     <div class="pagination">
       <span>Showing ${start}–${end} of ${total.toLocaleString()}</span>
       <div class="pagination-btns">
-        <button class="page-btn" ${page === 1 ? 'disabled' : ''} onclick="(${onPage})(${page-1})">‹</button>
+        <button class="page-btn" ${page === 1 ? 'disabled' : ''} onclick="_pageCallbacks['${containerId}'](${page-1})">‹</button>
         ${pages.map(p => p === '…'
           ? `<span class="page-btn" style="cursor:default">…</span>`
-          : `<button class="page-btn ${p === page ? 'active' : ''}" onclick="(${onPage})(${p})">${p}</button>`
+          : `<button class="page-btn ${p === page ? 'active' : ''}" onclick="_pageCallbacks['${containerId}'](${p})">${p}</button>`
         ).join('')}
-        <button class="page-btn" ${page === totalPages ? 'disabled' : ''} onclick="(${onPage})(${page+1})">›</button>
+        <button class="page-btn" ${page === totalPages ? 'disabled' : ''} onclick="_pageCallbacks['${containerId}'](${page+1})">›</button>
       </div>
     </div>`;
 }

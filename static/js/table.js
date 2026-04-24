@@ -14,6 +14,8 @@ class PortalTable {
     this._reload = onReload || (() => {});
     this._dragSrc = null;
     this.filters  = [];
+    this.sortKey  = null;
+    this.sortDir  = 'desc';
   }
 
   // ─── Column HTML ──────────────────────────────────────────────
@@ -28,8 +30,14 @@ class PortalTable {
     const ns = this.ns;
     return this.cols.map(col => {
       if (col.fixed) return `<th style="width:${col.w}px;padding-left:12px"></th>`;
-      const rz = `<div class="col-rz" onmousedown="event.stopPropagation();event.preventDefault();${ns}.onResizeStart(event,'${col.key}')"></div>`;
-      return `<th data-col="${col.key}" style="position:relative;cursor:grab;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"${col.title ? ` title="${col.title}"` : ''} draggable="true" ondragstart="${ns}.onColDragStart(event,'${col.key}')" ondragover="${ns}.onColDragOver(event,'${col.key}')" ondragleave="${ns}.onColDragLeave(event)" ondrop="${ns}.onColDrop(event,'${col.key}')"><span style="user-select:none;pointer-events:none">${col.label}</span>${rz}</th>`;
+      const rz = `<div class="col-rz" onmousedown="event.stopPropagation();event.preventDefault();${ns}.onResizeStart(event,'${col.key}')" onclick="event.stopPropagation()"></div>`;
+      const sortable = !!col.sort;
+      const isActive = sortable && this.sortKey === col.sort;
+      const arrow = isActive ? (this.sortDir === 'asc' ? '▲' : '▼') : (sortable ? '⇅' : '');
+      const arrowHtml = arrow ? `<span style="font-size:9px;margin-left:4px;color:${isActive ? 'var(--accent)' : 'var(--text-muted)'};pointer-events:none">${arrow}</span>` : '';
+      const cursor = sortable ? 'cursor:pointer' : 'cursor:grab';
+      const sortClick = sortable ? ` onclick="${ns}.sort('${col.sort}')"` : '';
+      return `<th data-col="${col.key}" style="position:relative;${cursor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis"${col.title ? ` title="${col.title}"` : ''} draggable="true" ondragstart="${ns}.onColDragStart(event,'${col.key}')" ondragover="${ns}.onColDragOver(event,'${col.key}')" ondragleave="${ns}.onColDragLeave(event)" ondrop="${ns}.onColDrop(event,'${col.key}')"${sortClick}><span style="user-select:none;pointer-events:none">${col.label}${arrowHtml}</span>${rz}</th>`;
     }).join('');
   }
 
@@ -150,7 +158,21 @@ class PortalTable {
     this._reload();
   }
 
-  // ─── Column resize ────────────────────────────────────────────
+  // ─── Sort ─────────────────────────────────────────────────────
+
+  sort(sortField) {
+    if (this.sortKey === sortField) {
+      this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortKey = sortField;
+      this.sortDir = 'desc';
+    }
+    const tr = document.getElementById(`${this.id}-thr`);
+    if (tr) tr.innerHTML = this.thead();
+    this._reload();
+  }
+
+  // ─── Column resize ─────────────────────────────────────────────
 
   onResizeStart(e, key) {
     const col = this.cols.find(c => c.key === key);
@@ -217,15 +239,15 @@ class PortalTable {
 // ── Shared table instances ────────────────────────────────────────
 
 const VulnsTable = new PortalTable('vulns', 'VulnsTable', [
-  { key:'title',      label:'Title',      w:300 },
-  { key:'severity',   label:'Severity',   w:90  },
-  { key:'cvss',       label:'CVSS',       w:65  },
-  { key:'vpr',        label:'VPR',        w:60  },
-  { key:'asset',      label:'Asset',      w:160 },
-  { key:'flags',      label:'Flags',      w:70  },
-  { key:'status',     label:'Status',     w:110 },
-  { key:'first_seen', label:'First Seen', w:90  },
-  { key:'_act',       label:'',           w:36, fixed:true },
+  { key:'title',      label:'Title',      w:300, sort:'title'      },
+  { key:'severity',   label:'Severity',   w:90,  sort:'severity'   },
+  { key:'cvss',       label:'CVSS',       w:65,  sort:'cvss'       },
+  { key:'vpr',        label:'VPR',        w:60,  sort:'vpr'        },
+  { key:'asset',      label:'Asset',      w:160                    },
+  { key:'flags',      label:'Flags',      w:70                     },
+  { key:'status',     label:'Status',     w:110, sort:'status'     },
+  { key:'first_seen', label:'First Seen', w:90,  sort:'first_seen' },
+  { key:'_act',       label:'',           w:36, fixed:true         },
 ], () => typeof VulnsPage !== 'undefined' && VulnsPage.load?.());
 
 const RecsTable = new PortalTable('recs', 'RecsTable', [
