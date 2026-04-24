@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VM Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
+        </svg>
+      </div>
+      <span class="logo-text">VM Portal</span>
+      <span class="logo-version">v1.0</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Overview</div>
+      <a class="nav-item active" data-page="dashboard">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+        </svg>
+        Dashboard
+      </a>
+
+      <div class="nav-section-label">Security</div>
+      <a class="nav-item" data-page="vulnerabilities" onclick="navigateVulns('list');return false">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        Findings
+        <span class="nav-badge" id="nav-badge-vulns">–</span>
+      </a>
+      <div class="nav-sub" id="nav-vulns-sub">
+        <a class="nav-sub-item active" data-vtab="list" onclick="navigateVulns('list')">Vulnerabilities</a>
+        <a class="nav-sub-item" data-vtab="recommendations" onclick="navigateVulns('recommendations')">Recommendations</a>
+      </div>
+
+      <!-- Prioritization (top-level) -->
+      <a class="nav-item" data-page="prioritization" onclick="navigatePrioritization('dashboard');return false">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <circle cx="12" cy="12" r="6"/>
+          <circle cx="12" cy="12" r="2"/>
+        </svg>
+        Prioritization
+        <span class="nav-badge nav-badge-p0" id="nav-badge-p0" style="background:#ef4444;color:white;display:none">–</span>
+      </a>
+      <div class="nav-sub" id="nav-prio-sub">
+        <a class="nav-sub-item active" data-ptab="dashboard" onclick="navigatePrioritization('dashboard')">Dashboard</a>
+        <a class="nav-sub-item" data-ptab="vulns" onclick="navigatePrioritization('vulns')">Vulnerabilities</a>
+      </div>
+      <a class="nav-item" data-page="assets">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+        Inventory
+      </a>
+      <div class="nav-sub" id="nav-assets-sub">
+        <a class="nav-sub-item active" data-tab="hosts" onclick="navigateAssets('hosts')">Hosts</a>
+        <a class="nav-sub-item" data-tab="cloud" onclick="navigateAssets('cloud','')">Cloud</a>
+        <div class="nav-cloud-sub" id="nav-cloud-sub">
+          <a class="nav-sub-sub-item" data-cloudplatform="AWS" onclick="navigateAssets('cloud','AWS')">AWS</a>
+          <a class="nav-sub-sub-item" data-cloudplatform="Azure" onclick="navigateAssets('cloud','Azure')">Azure</a>
+          <a class="nav-sub-sub-item" data-cloudplatform="Kubernetes" onclick="navigateAssets('cloud','Kubernetes')">Kubernetes</a>
+        </div>
+        <a class="nav-sub-item" data-tab="apps" onclick="navigateAssets('apps')">Applications / Systems</a>
+      </div>
+      <a class="nav-item" data-page="webdomains" onclick="navigate('webdomains');return false">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+        Web &amp; Domains
+      </a>
+      <a class="nav-item" data-page="cve">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+          <polyline points="10 9 9 9 8 9"/>
+        </svg>
+        CVE Database
+      </a>
+
+      <div class="nav-section-label">Operations</div>
+      <a class="nav-item" data-page="reports">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        Reports
+      </a>
+
+      <div class="nav-section-label">System</div>
+      <a class="nav-item" data-page="settings" onclick="navigateSettings('general');return false">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        Settings
+      </a>
+      <div class="nav-sub" id="nav-settings-sub">
+        <a class="nav-sub-item active" data-stab="general"       onclick="navigateSettings('general')">General</a>
+        <a class="nav-sub-item"        data-stab="integrations"  onclick="navigateSettings('integrations')">Integrations</a>
+        <a class="nav-sub-item"        data-stab="notifications" onclick="navigateSettings('notifications')">Notifications</a>
+        <a class="nav-sub-item"        data-stab="sla"           onclick="navigateSettings('sla')">SLA Policies</a>
+        <a class="nav-sub-item"        data-stab="schedules"     onclick="navigateSettings('schedules')">Scan Schedules</a>
+        <a class="nav-sub-item"        data-stab="access"        onclick="navigateSettings('access')">Access &amp; Roles</a>
+        <a class="nav-sub-item"        data-stab="apikeys"       onclick="navigateSettings('apikeys')">API Keys</a>
+        <a class="nav-sub-item"        data-stab="audit"         onclick="navigateSettings('audit')">Audit Log</a>
+        <a class="nav-sub-item"        data-stab="scoring"       onclick="navigateSettings('scoring')">Risk Scoring Model</a>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="scanner-pills" id="sidebar-scanner-status"></div>
+    </div>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────── -->
+  <main class="main-content">
+    <header class="topbar">
+      <div class="topbar-breadcrumb">
+        <span id="topbar-page-name">Dashboard</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-primary" id="btn-run-scan" onclick="showScanModal()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Run Scan
+        </button>
+        <button class="btn btn-icon" title="Refresh" onclick="refreshCurrentPage()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </button>
+        <div style="width:1px;height:20px;background:var(--border)"></div>
+        <span style="font-size:12px;color:var(--text-muted)" id="last-updated">–</span>
+      </div>
+    </header>
+
+    <div class="page-content" id="page-content">
+      <div class="loader"><div class="spinner"></div> Loading…</div>
+    </div>
+  </main>
+</div>
+
+<!-- ── Detail Panel ─────────────────────────────────────── -->
+<div class="detail-overlay" id="detail-overlay" onclick="closeDetail()"></div>
+<div class="detail-panel" id="detail-panel">
+  <div class="detail-header">
+    <div class="detail-header-info">
+      <div class="detail-title" id="detail-title">–</div>
+      <div class="detail-meta" id="detail-meta"></div>
+    </div>
+    <button class="btn btn-icon btn-sm" onclick="closeDetail()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  </div>
+  <div class="detail-body" id="detail-body"></div>
+  <div class="detail-actions" id="detail-actions"></div>
+</div>
+
+<!-- ── Toast Container ──────────────────────────────────── -->
+<div id="toast-container"></div>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<!-- App JS -->
+<script src="/static/js/table.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/vulnerabilities.js"></script>
+<script src="/static/js/recommendations.js"></script>
+<script src="/static/js/prioritization.js"></script>
+<script src="/static/js/assets.js"></script>
+<script src="/static/js/webdomains.js"></script>
+<script src="/static/js/cve.js"></script>
+<script src="/static/js/scanners.js"></script>
+<script src="/static/js/settings.js"></script>
+<script src="/static/js/app.js"></script>
+
+</body>
+</html>
