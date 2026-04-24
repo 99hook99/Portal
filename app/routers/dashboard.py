@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends
+from collections import defaultdict
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -8,6 +9,121 @@ from app.models import Asset, Vulnerability, ScanJob, Scanner
 from app.schemas import DashboardStats, SeverityDistribution, TrendPoint, TopAsset
 
 router = APIRouter()
+
+
+@router.get("/kpi")
+def kpi_metrics(period: str = Query("7d", pattern="^(24h|7d|30d|1y)$"), db: Session = Depends(get_db)):
+    now = datetime.utcnow()
+    period_days = {"24h": 1, "7d": 7, "30d": 30, "1y": 365}[period]
+    curr_start = now - timedelta(days=period_days)
+    prev_start = curr_start - timedelta(days=period_days)
+
+    V = Vulnerability
+
+    def snap(sev=None):
+        q = db.query(func.count(V.id)).filter(V.status != "remediated")
+        if sev:
+            q = q.filter(V.severity == sev)
+        return q.scalar() or 0
+
+    def cnt_new(since, until=None, sev=None):
+        q = db.query(func.count(V.id)).filter(V.first_seen >= since)
+        if until:
+            q = q.filter(V.first_seen < until)
+        if sev:
+            q = q.filter(V.severity == sev)
+        return q.scalar() or 0
+
+    def cnt_rem(since, until=None):
+        q = db.query(func.count(V.id)).filter(V.status == "remediated", V.last_seen >= since)
+        if until:
+            q = q.filter(V.last_seen < until)
+        return q.scalar() or 0
+
+    def avg_mttr(since, until=None):
+        q = db.query(func.avg(
+            func.julianday(V.last_seen) - func.julianday(V.first_seen)
+        )).filter(V.status == "remediated", V.last_seen >= since)
+        if until:
+            q = q.filter(V.last_seen < until)
+        return q.scalar()
+
+    def pct(c, p):
+        if not p:
+            return None
+        return round((c - p) / p * 100, 1)
+
+    new_c  = cnt_new(curr_start)
+    new_p  = cnt_new(prev_start, curr_start)
+    crit_c = cnt_new(curr_start, sev="critical")
+    crit_p = cnt_new(prev_start, curr_start, "critical")
+    high_c = cnt_new(curr_start, sev="high")
+    high_p = cnt_new(prev_start, curr_start, "high")
+    rem_c  = cnt_rem(curr_start)
+    rem_p  = cnt_rem(prev_start, curr_start)
+    mttr_c = avg_mttr(curr_start)
+    mttr_p = avg_mttr(prev_start, curr_start)
+    acc    = db.query(func.count(V.id)).filter(V.status == "accepted").scalar() or 0
+    acc_c  = db.query(func.count(V.id)).filter(V.status == "accepted", V.last_seen >= curr_start).scalar() or 0
+    acc_p  = db.query(func.count(V.id)).filter(V.status == "accepted", V.last_seen >= prev_start, V.last_seen < curr_start).scalar() or 0
+
+    assets_covered = db.query(func.count(func.distinct(V.asset_id))).filter(V.status != "remediated").scalar() or 0
+    total_assets   = db.query(func.count(Asset.id)).scalar() or 0
+
+    # ── Sparklines via GROUP BY (2 queries instead of N×4) ──────
+    if period == "24h":
+        fmt, n, td = '%Y-%m-%d %H', 24, timedelta(hours=1)
+    elif period == "1y":
+        fmt, n, td = '%Y-%W', 52, timedelta(weeks=1)
+    else:
+        fmt, n, td = '%Y-%m-%d', period_days, timedelta(days=1)
+
+    new_rows = db.query(
+        func.strftime(fmt, V.first_seen).label("b"),
+        V.severity,
+        func.count(V.id).label("c"),
+    ).filter(V.first_seen >= curr_start).group_by("b", V.severity).all()
+
+    rem_rows = db.query(
+        func.strftime(fmt, V.last_seen).label("b"),
+        func.count(V.id).label("c"),
+    ).filter(V.status == "remediated", V.last_seen >= curr_start).group_by("b").all()
+
+    bkt = defaultdict(lambda: defaultdict(int))
+    for b, sev, c in new_rows:
+        bkt[b]["total"] += c
+        bkt[b][sev] += c
+    rem_bkt = {b: c for b, c in rem_rows}
+
+    sl: dict = {"total": [], "critical": [], "high": [], "remediated": []}
+    for i in range(n):
+        key = (curr_start + i * td).strftime(fmt)
+        d = bkt.get(key, {})
+        sl["total"].append(d.get("total", 0))
+        sl["critical"].append(d.get("critical", 0))
+        sl["high"].append(d.get("high", 0))
+        sl["remediated"].append(rem_bkt.get(key, 0))
+
+    return {
+        "period": period,
+        "snap": {
+            "total": snap(), "critical": snap("critical"), "high": snap("high"),
+            "medium": snap("medium"), "low": snap("low"),
+            "accepted": acc, "assets_covered": assets_covered, "total_assets": total_assets,
+        },
+        "metrics": {
+            "new":        {"v": new_c,  "pct": pct(new_c,  new_p)},
+            "critical":   {"v": crit_c, "pct": pct(crit_c, crit_p)},
+            "high":       {"v": high_c, "pct": pct(high_c, high_p)},
+            "remediated": {"v": rem_c,  "pct": pct(rem_c,  rem_p)},
+            "accepted":   {"v": acc_c,  "pct": pct(acc_c,  acc_p)},
+            "mttr": {
+                "v":   round(float(mttr_c), 1) if mttr_c else None,
+                "pct": pct(float(mttr_c), float(mttr_p)) if mttr_c and mttr_p else None,
+            },
+        },
+        "sparklines": sl,
+    }
 
 
 @router.get("/stats", response_model=DashboardStats)
@@ -64,27 +180,40 @@ def severity_distribution(db: Session = Depends(get_db)):
 
 
 @router.get("/trend")
-def trend(db: Session = Depends(get_db)):
+def trend(period: str = Query("30d", pattern="^(24h|7d|30d|1y)$"), db: Session = Depends(get_db)):
+    period_days = {"24h": 1, "7d": 7, "30d": 30, "1y": 365}[period]
+    now = datetime.utcnow()
+    start = now - timedelta(days=period_days)
+
+    if period == "24h":
+        fmt, n, td, date_fmt = '%Y-%m-%d %H', 24, timedelta(hours=1), "%H:00"
+    elif period == "1y":
+        fmt, n, td, date_fmt = '%Y-%W', 52, timedelta(weeks=1), "%b %d"
+    else:
+        fmt, n, td, date_fmt = '%Y-%m-%d', period_days, timedelta(days=1), "%m-%d"
+
+    rows = db.query(
+        func.strftime(fmt, Vulnerability.first_seen).label("b"),
+        Vulnerability.severity,
+        func.count(Vulnerability.id).label("c"),
+    ).filter(Vulnerability.first_seen >= start).group_by("b", Vulnerability.severity).all()
+
+    bkt: dict = defaultdict(lambda: defaultdict(int))
+    for b, sev, c in rows:
+        bkt[b][sev] += c
+
     points = []
-    for days_back in range(29, -1, -1):
-        day = datetime.utcnow() - timedelta(days=days_back)
-        day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
-        day_end = day_start + timedelta(days=1)
-
-        def c(sev):
-            return db.query(func.count(Vulnerability.id)).filter(
-                Vulnerability.severity == sev,
-                Vulnerability.first_seen <= day_end,
-                Vulnerability.status != "remediated",
-            ).scalar() or 0
-
-        points.append(TrendPoint(
-            date=day_start.strftime("%Y-%m-%d"),
-            critical=c("critical"),
-            high=c("high"),
-            medium=c("medium"),
-            low=c("low"),
-        ))
+    for i in range(n):
+        bs = start + i * td
+        key = bs.strftime(fmt)
+        d = bkt.get(key, {})
+        points.append({
+            "date": bs.strftime(date_fmt),
+            "critical": d.get("critical", 0),
+            "high":     d.get("high", 0),
+            "medium":   d.get("medium", 0),
+            "low":      d.get("low", 0),
+        })
     return points
 
 
