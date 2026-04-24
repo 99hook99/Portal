@@ -123,14 +123,14 @@ const CVEPage = {
         </select>
         <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <select class="input" id="nvd-days" style="width:115px;font-size:12px">
+            <option value="1">Last 24 h</option>
             <option value="7">Last 7 days</option>
             <option value="30" selected>Last 30 days</option>
             <option value="90">Last 90 days</option>
-            <option value="180">Last 180 days</option>
             <option value="365">Last year</option>
           </select>
-          <button class="btn btn-primary btn-sm" id="nvd-sync-btn" onclick="CVEPage._syncNVD()">
-            ${_syncIcon()} Sync NVD
+          <button class="btn btn-secondary btn-sm" id="nvd-sync-btn" onclick="CVEPage._syncNVD()">
+            ${_syncIcon()} Sync now
           </button>
           <span id="nvd-status-txt" style="font-size:11px;color:var(--text-muted)"></span>
           <span style="font-size:12px;color:var(--text-muted)" id="nvd-count">–</span>
@@ -179,7 +179,10 @@ const CVEPage = {
     };
     const rows = NVDTable.applyFilters(data.items, GETTERS);
     if (!rows.length) {
-      const msg = (data.total === 0) ? 'No NVD data cached — click <b>Sync NVD</b> to fetch from NIST.' : 'No matches';
+      const isSyncing = data.sync_status?.running;
+      const msg = (data.total === 0)
+        ? (isSyncing ? '⟳ Initial NVD sync in progress — data will appear shortly…' : 'NVD data not yet loaded. Auto-sync starts on server startup.')
+        : 'No matches';
       tbody.innerHTML = _emptyRow(NVDTable.cols.length, msg);
       renderPagination('nvd-pagination', s.page, s.per_page, 0, () => {});
       return;
@@ -247,9 +250,9 @@ const CVEPage = {
     if (btn) btn.disabled = !!st.running;
     let txt = '';
     if      (st.running)     txt = '<span style="color:var(--warn)">⟳ Syncing…</span>';
-    else if (st.error)       txt = `<span style="color:var(--danger)" title="${esc(st.error)}">Error — hover for details</span>`;
-    else if (st.last_synced) txt = `Synced ${st.last_count.toLocaleString()} · ${st.last_synced.slice(0,10)}`;
-    else                     txt = 'Not yet synced';
+    else if (st.error)       txt = `<span style="color:var(--danger)" title="${esc(st.error)}">Sync error — hover for details</span>`;
+    else if (st.last_synced) txt = `Last sync: ${st.last_synced.slice(0,10)} · auto-syncs every 24h`;
+    else                     txt = 'Auto-sync on startup…';
     _setStatusTxt('nvd-status-txt', '', txt, true);
   },
 
@@ -301,8 +304,8 @@ const CVEPage = {
           <input class="input search-input" id="kev-search" placeholder="Search CVE ID, vendor, product…">
         </div>
         <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" id="kev-sync-btn" onclick="CVEPage._syncKEV()">
-            ${_syncIcon()} Sync KEV
+          <button class="btn btn-secondary btn-sm" id="kev-sync-btn" onclick="CVEPage._syncKEV()">
+            ${_syncIcon()} Sync now
           </button>
           <span id="kev-status-txt" style="font-size:11px;color:var(--text-muted)"></span>
           <span style="font-size:12px;color:var(--text-muted)" id="kev-count">–</span>
@@ -348,7 +351,10 @@ const CVEPage = {
     };
     const rows = KEVTable.applyFilters(data.items, GETTERS);
     if (!rows.length) {
-      const msg = (data.total === 0) ? 'No KEV data cached — click <b>Sync KEV</b> to fetch from CISA.' : 'No matches';
+      const isKevSyncing = data.sync_status?.running;
+      const msg = (data.total === 0)
+        ? (isKevSyncing ? '⟳ Initial KEV sync in progress…' : 'KEV data not yet loaded. Auto-sync starts on server startup.')
+        : 'No matches';
       tbody.innerHTML = _emptyRow(KEVTable.cols.length, msg);
       renderPagination('kev-pagination', s.page, s.per_page, 0, () => {});
       return;
@@ -415,9 +421,9 @@ const CVEPage = {
     if (btn) btn.disabled = !!st.running;
     let txt = '';
     if      (st.running)     txt = '<span style="color:var(--warn)">⟳ Syncing…</span>';
-    else if (st.error)       txt = `<span style="color:var(--danger)" title="${esc(st.error)}">Error — hover for details</span>`;
-    else if (st.last_synced) txt = `${st.last_count.toLocaleString()} entries · ${st.last_synced.slice(0,10)}`;
-    else                     txt = 'Not yet synced';
+    else if (st.error)       txt = `<span style="color:var(--danger)" title="${esc(st.error)}">Sync error — hover for details</span>`;
+    else if (st.last_synced) txt = `Last sync: ${st.last_synced.slice(0,10)} · auto-syncs every 24h`;
+    else                     txt = 'Auto-sync on startup…';
     _setStatusTxt('kev-status-txt', '', txt, true);
   },
 

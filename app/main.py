@@ -1,7 +1,9 @@
+import asyncio
+from contextlib import asynccontextmanager, suppress
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from contextlib import asynccontextmanager
 from sqlalchemy import text
 
 from app.database import engine, SessionLocal
@@ -228,6 +230,34 @@ def _ensure_scanners():
         db.close()
 
 
+async def _cve_auto_sync():
+    """Background task: sync KEV + NVD on startup and every 24 h."""
+    from app.routers.cve import _do_kev_sync, _do_nvd_sync, _nvd_sync_status, _kev_sync_status
+    await asyncio.sleep(8)          # let DB finish init
+
+    # Initial sync (only if DB is empty)
+    db_check = SessionLocal()
+    try:
+        from app.models import NVDEntry, KEVEntry
+        nvd_empty = db_check.query(NVDEntry.id).first() is None
+        kev_empty = db_check.query(KEVEntry.id).first() is None
+    finally:
+        db_check.close()
+
+    if kev_empty:
+        await _do_kev_sync()
+    if nvd_empty:
+        await asyncio.sleep(2)
+        await _do_nvd_sync(30)      # seed with last 30 days on first run
+
+    # Periodic loop: every 24 h pull the last 25 h of changes
+    while True:
+        await asyncio.sleep(24 * 3600)
+        await _do_kev_sync()
+        await asyncio.sleep(60)
+        await _do_nvd_sync(1)       # incremental: last 25 h (1 day + buffer)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -249,7 +279,11 @@ async def lifespan(app: FastAPI):
         recalculate_all(db)
     finally:
         db.close()
+    _sync_task = asyncio.create_task(_cve_auto_sync())
     yield
+    _sync_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await _sync_task
 
 
 app = FastAPI(

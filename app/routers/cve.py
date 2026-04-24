@@ -14,12 +14,13 @@ from app.schemas import CVEOut
 
 router = APIRouter()
 
-NVD_API_KEY = "379AE5A9-9401-F111-8367-0EBF96DE670D"
-NVD_BASE    = "https://services.nvd.nist.gov/rest/json/cves/2.0"
-KEV_URL     = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+NVD_API_KEY  = "379AE5A9-9401-F111-8367-0EBF96DE670D"
+NVD_HEADERS  = {"api-key": NVD_API_KEY}   # NVD API 2.0 uses lowercase hyphen header
+NVD_BASE     = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+KEV_URL      = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 
-_nvd_sync_status: dict = {"running": False, "last_synced": None, "last_count": 0, "error": None}
-_kev_sync_status: dict = {"running": False, "last_synced": None, "last_count": 0, "error": None}
+_nvd_sync_status: dict = {"running": False, "last_synced": None, "last_count": 0, "total": 0, "error": None}
+_kev_sync_status: dict = {"running": False, "last_synced": None, "last_count": 0, "total": 0, "error": None}
 
 
 # ── Local CVE records ──────────────────────────────────────────────────────────
@@ -229,7 +230,7 @@ async def _do_nvd_sync(days: int) -> None:
         start = now - timedelta(days=days)
         start_str = start.strftime("%Y-%m-%dT%H:%M:%S.000")
         end_str   = now.strftime("%Y-%m-%dT%H:%M:%S.000")
-        headers   = {"apiKey": NVD_API_KEY}
+        headers   = NVD_HEADERS
         total_synced = 0
         start_idx    = 0
         per_page     = 2000
