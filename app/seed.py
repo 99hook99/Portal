@@ -340,6 +340,10 @@ def seed(db: Session) -> None:
     # ── Scanners ─────────────────────────────────────────────────────────────
     scanner_objs = []
     for name, stype in SCANNERS:
+        existing = db.query(Scanner).filter(Scanner.name == name).first()
+        if existing:
+            scanner_objs.append(existing)
+            continue
         s = Scanner(
             name=name,
             scanner_type=stype,
