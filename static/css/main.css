@@ -520,7 +520,6 @@ body {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 18px 18px 14px;
   display: flex;
   flex-direction: column;
   transition: border-color var(--transition), box-shadow var(--transition);
@@ -581,16 +580,21 @@ body {
 .kpi-sub {
   font-size: 11px;
   color: var(--text-muted);
-  margin-bottom: 10px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.kpi-spark {
-  margin-top: auto;
-  padding-top: 6px;
-  opacity: 0.85;
+.kpi-body {
+  padding: 16px 18px 14px;
+  flex: 1;
+}
+
+.kpi-foot {
+  border-top: 1px solid var(--border);
+  background: rgba(0,0,0,0.12);
+  overflow: hidden;
+  line-height: 0;
 }
 
 /* ── Widget Grid ─────────────────────────────────────────────*/

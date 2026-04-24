@@ -2,26 +2,33 @@
 
 // ── Sparkline SVG ─────────────────────────────────────────────────────────────
 
-function _sl(data, color, w = 100, h = 36) {
-  if (!data || data.length < 2) return `<svg width="${w}" height="${h}"></svg>`;
+// Sparkline fills full width of its container via viewBox + width=100%
+function _sl(data, color, h = 40) {
+  const vw = 200; // coordinate space width
+  if (!data || data.length < 2 || data.every(v => v === 0)) {
+    // flat line for zero/missing data
+    return `<svg width="100%" height="${h}" viewBox="0 0 ${vw} ${h}" preserveAspectRatio="none" style="display:block">
+      <line x1="0" y1="${h * 0.75}" x2="${vw}" y2="${h * 0.75}" stroke="${color}" stroke-width="1" opacity="0.25" stroke-dasharray="4 3"/>
+    </svg>`;
+  }
   const min = Math.min(0, ...data);
   const max = Math.max(...data, 1);
   const r   = max - min || 1;
-  const pad = 3;
-  const xs  = data.map((_, i) => ((i / (data.length - 1)) * w).toFixed(1));
+  const pad = 4;
+  const xs  = data.map((_, i) => ((i / (data.length - 1)) * vw).toFixed(1));
   const ys  = data.map(v => (h - pad - ((v - min) / r) * (h - pad * 2)).toFixed(1));
   const pts = xs.map((x, i) => `${x},${ys[i]}`).join(' ');
   const lx  = xs[xs.length - 1], ly = ys[ys.length - 1];
-  const area = `M${xs[0]},${h} ` + xs.map((x, i) => `L${x},${ys[i]}`).join(' ') + ` L${lx},${h}Z`;
+  const area = `M0,${h} ` + xs.map((x, i) => `L${x},${ys[i]}`).join(' ') + ` L${vw},${h}Z`;
   const gid  = `slg${color.replace(/[^a-f0-9]/gi, '')}`;
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;overflow:visible">
+  return `<svg width="100%" height="${h}" viewBox="0 0 ${vw} ${h}" preserveAspectRatio="none" style="display:block">
     <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
+      <stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>
       <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
     </linearGradient></defs>
     <path d="${area}" fill="url(#${gid})"/>
-    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="${lx}" cy="${ly}" r="2.5" fill="${color}"/>
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${lx}" cy="${ly}" r="3" fill="${color}"/>
   </svg>`;
 }
 
@@ -34,15 +41,19 @@ function _kpi(id, label, value, sub, delta, goodDir, slData, slColor, onClick) {
   const di    = dv == null ? '' : dv > 0 ? '▲' : dv < 0 ? '▼' : '→';
   const dtext = dv != null ? `${di} ${Math.abs(dv).toFixed(1)}%` : '';
   const fmt   = v => (v == null ? '–' : typeof v === 'number' ? v.toLocaleString() : v);
+  const c     = slColor || '#3b82f6';
 
+  // Two-section card: body (text) + foot (sparkline separator)
   return `<div class="kpi-card${onClick ? ' kpi-link' : ''}" id="kpi-${id}"${onClick ? ` onclick="${onClick}"` : ''}>
-    <div class="kpi-top">
-      <span class="kpi-label">${label}</span>
-      ${dtext ? `<span class="kpi-delta" style="color:${dc}">${dtext}</span>` : ''}
+    <div class="kpi-body">
+      <div class="kpi-top">
+        <span class="kpi-label">${label}</span>
+        ${dtext ? `<span class="kpi-delta" style="color:${dc};background:${dc}15;border:1px solid ${dc}30;border-radius:4px;padding:1px 6px;font-size:10px">${dtext}</span>` : ''}
+      </div>
+      <div class="kpi-value">${fmt(value)}</div>
+      ${sub ? `<div class="kpi-sub">${sub}</div>` : ''}
     </div>
-    <div class="kpi-value">${fmt(value)}</div>
-    ${sub ? `<div class="kpi-sub">${sub}</div>` : '<div style="height:4px"></div>'}
-    <div class="kpi-spark">${slData ? _sl(slData, slColor || '#3b82f6') : ''}</div>
+    <div class="kpi-foot">${_sl(slData, c)}</div>
   </div>`;
 }
 
