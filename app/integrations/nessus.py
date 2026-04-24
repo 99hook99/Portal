@@ -5,6 +5,7 @@ Credentials loaded from NessusConfig DB table (configured via UI)
 or fallback to environment variables.
 """
 from typing import Optional
+import asyncio
 import httpx
 
 from app.integrations.base import BaseIntegration, VulnFinding
@@ -260,8 +261,93 @@ class NessusIntegration(BaseIntegration):
             pass
         return None
 
+    async def _fetch_plugin_findings(
+        self,
+        client: httpx.AsyncClient,
+        sem: asyncio.Semaphore,
+        scan_id: int,
+        host_id: int,
+        vuln_entry: dict,
+        host_info: dict,
+        scan_name: str,
+    ) -> list[VulnFinding]:
+        async with sem:
+            plugin_id = str(vuln_entry["plugin_id"])
+            sev_int = vuln_entry.get("severity", 0)
+            plugin_name_hint = vuln_entry.get("plugin_name", "")
+            ip = host_info["ip"]
+            hostname = host_info["hostname"]
+            fqdn = host_info["fqdn"]
+            os_str = host_info["os"]
+            mac = host_info["mac"]
+
+            plugin_data = await self._api_get(
+                client, f"/scans/{scan_id}/hosts/{host_id}/plugins/{plugin_id}"
+            )
+
+            if not plugin_data:
+                return [VulnFinding(
+                    title=plugin_name_hint or f"Plugin {plugin_id}",
+                    severity=SEVERITY_MAP.get(sev_int, "info"),
+                    source="nessus",
+                    asset_ip=ip,
+                    asset_hostname=hostname or None,
+                    plugin_id=plugin_id,
+                    plugin_name=plugin_name_hint,
+                    scan_name=scan_name,
+                    os=os_str or None,
+                    mac_address=mac or None,
+                    fqdn=fqdn or None,
+                )]
+
+            meta, output_records = _parse_plugin_detail(plugin_data)
+            meta["severity_id"] = sev_int
+            meta["severity_label"] = SEVERITY_MAP.get(sev_int, "info")
+
+            cvss3 = _to_float(meta.get("cvss3_base_score"))
+            cvss2 = _to_float(meta.get("cvss2_base_score"))
+            cvss = cvss3 or cvss2
+            vpr = _to_float(meta.get("vpr_score"))
+            epss = _to_float(meta.get("epss_score"))
+            ea_raw = meta.get("exploit_available", "")
+            exploit_avail = (ea_raw.lower() == "true") if ea_raw else None
+
+            results = []
+            for out_rec in output_records:
+                port = _to_int(out_rec.get("port"))
+                protocol = out_rec.get("protocol") or None
+                results.append(VulnFinding(
+                    title=meta.get("plugin_name") or plugin_name_hint or f"Plugin {plugin_id}",
+                    severity=SEVERITY_MAP.get(sev_int, "info"),
+                    source="nessus",
+                    asset_ip=ip,
+                    asset_hostname=hostname or None,
+                    description=meta.get("description") or None,
+                    solution=meta.get("solution") or None,
+                    cvss_score=cvss,
+                    cvss_vector=meta.get("cvss3_vector") or meta.get("cvss2_vector") or None,
+                    cve_ids=meta.get("cve") or None,
+                    plugin_id=plugin_id,
+                    plugin_name=meta.get("plugin_name") or plugin_name_hint,
+                    plugin_family=meta.get("plugin_family") or None,
+                    port=port,
+                    protocol=protocol,
+                    vpr_score=vpr,
+                    epss_score=epss,
+                    exploit_available=exploit_avail,
+                    cisa_kev_date=meta.get("cisa_kev_date") or None,
+                    synopsis=meta.get("synopsis") or None,
+                    scan_name=scan_name,
+                    os=os_str or None,
+                    mac_address=mac or None,
+                    fqdn=fqdn or None,
+                ))
+            return results
+
     async def fetch_vulnerabilities(self) -> list[VulnFinding]:
-        findings: list[VulnFinding] = []
+        # 20 concurrent plugin-detail requests — fast without hammering Nessus
+        sem = asyncio.Semaphore(20)
+        tasks = []
 
         async with self._client() as client:
             folders_data = await self._api_get(client, "/folders")
@@ -286,9 +372,8 @@ class NessusIntegration(BaseIntegration):
                     detail = await self._api_get(client, f"/scans/{scan_id}")
                     if not detail:
                         continue
-                    hosts = detail.get("hosts") or []
 
-                    for host_summary in hosts:
+                    for host_summary in (detail.get("hosts") or []):
                         host_id = host_summary["host_id"]
                         ip_hint = host_summary.get("hostname", "")
 
@@ -299,81 +384,26 @@ class NessusIntegration(BaseIntegration):
                             continue
 
                         info = host_data.get("info", {})
-                        ip = info.get("host-ip", ip_hint) or ip_hint
-                        hostname = host_summary.get("hostname", "")
-                        fqdn = info.get("host-fqdn", "")
-                        os_str = info.get("operating-system", "")
-                        mac = info.get("mac-address", "")
+                        host_info = {
+                            "ip": info.get("host-ip", ip_hint) or ip_hint,
+                            "hostname": host_summary.get("hostname", ""),
+                            "fqdn": info.get("host-fqdn", ""),
+                            "os": info.get("operating-system", ""),
+                            "mac": info.get("mac-address", ""),
+                        }
 
                         for vuln_entry in host_data.get("vulnerabilities", []):
-                            plugin_id = str(vuln_entry["plugin_id"])
-                            sev_int = vuln_entry.get("severity", 0)
-                            plugin_name_hint = vuln_entry.get("plugin_name", "")
-
-                            plugin_data = await self._api_get(
-                                client,
-                                f"/scans/{scan_id}/hosts/{host_id}/plugins/{plugin_id}",
+                            tasks.append(
+                                self._fetch_plugin_findings(
+                                    client, sem, scan_id, host_id,
+                                    vuln_entry, host_info, scan_name,
+                                )
                             )
 
-                            if not plugin_data:
-                                findings.append(VulnFinding(
-                                    title=plugin_name_hint or f"Plugin {plugin_id}",
-                                    severity=SEVERITY_MAP.get(sev_int, "info"),
-                                    source="nessus",
-                                    asset_ip=ip,
-                                    asset_hostname=hostname or None,
-                                    plugin_id=plugin_id,
-                                    plugin_name=plugin_name_hint,
-                                    scan_name=scan_name,
-                                    os=os_str or None,
-                                    mac_address=mac or None,
-                                    fqdn=fqdn or None,
-                                ))
-                                continue
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                            meta, output_records = _parse_plugin_detail(plugin_data)
-                            meta["severity_id"] = sev_int
-                            meta["severity_label"] = SEVERITY_MAP.get(sev_int, "info")
-
-                            cvss3 = _to_float(meta.get("cvss3_base_score"))
-                            cvss2 = _to_float(meta.get("cvss2_base_score"))
-                            cvss = cvss3 or cvss2
-
-                            vpr = _to_float(meta.get("vpr_score"))
-                            epss = _to_float(meta.get("epss_score"))
-
-                            ea_raw = meta.get("exploit_available", "")
-                            exploit_avail = (ea_raw.lower() == "true") if ea_raw else None
-
-                            for out_rec in output_records:
-                                port = _to_int(out_rec.get("port"))
-                                protocol = out_rec.get("protocol") or None
-
-                                findings.append(VulnFinding(
-                                    title=meta.get("plugin_name") or plugin_name_hint or f"Plugin {plugin_id}",
-                                    severity=SEVERITY_MAP.get(sev_int, "info"),
-                                    source="nessus",
-                                    asset_ip=ip,
-                                    asset_hostname=hostname or None,
-                                    description=meta.get("description") or None,
-                                    solution=meta.get("solution") or None,
-                                    cvss_score=cvss,
-                                    cvss_vector=meta.get("cvss3_vector") or meta.get("cvss2_vector") or None,
-                                    cve_ids=meta.get("cve") or None,
-                                    plugin_id=plugin_id,
-                                    plugin_name=meta.get("plugin_name") or plugin_name_hint,
-                                    plugin_family=meta.get("plugin_family") or None,
-                                    port=port,
-                                    protocol=protocol,
-                                    vpr_score=vpr,
-                                    epss_score=epss,
-                                    exploit_available=exploit_avail,
-                                    cisa_kev_date=meta.get("cisa_kev_date") or None,
-                                    synopsis=meta.get("synopsis") or None,
-                                    scan_name=scan_name,
-                                    os=os_str or None,
-                                    mac_address=mac or None,
-                                    fqdn=fqdn or None,
-                                ))
-
+        findings: list[VulnFinding] = []
+        for r in results:
+            if isinstance(r, list):
+                findings.extend(r)
         return findings

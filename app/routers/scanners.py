@@ -62,72 +62,85 @@ def _is_configured(stype: str, db=None, scanner_id: int = None) -> bool:
 
 def _persist_findings(db, findings, source: str):
     from app.models import Asset, Vulnerability
+    from sqlalchemy import case, func
 
     now = datetime.utcnow()
+
+    # ── Phase 1: resolve / create assets ─────────────────────────────────────
     asset_cache: dict = {}
+
+    for f in findings:
+        cloud_rid = getattr(f, "cloud_resource_id", None)
+        ip = f.asset_ip or ""
+        if not cloud_rid and not ip:
+            continue
+
+        cache_key = cloud_rid or ip
+        if cache_key in asset_cache:
+            continue
+
+        asset = None
+        if cloud_rid:
+            asset = db.query(Asset).filter(Asset.cloud_resource_id == cloud_rid).first()
+        if not asset and ip:
+            asset = db.query(Asset).filter(Asset.ip_address == ip).first()
+
+        if asset:
+            asset.last_seen = now
+            asset.source = _merge_source(asset.source, source)
+            if f.asset_hostname:
+                asset.hostname = f.asset_hostname
+            if ip and not asset.ip_address:
+                asset.ip_address = ip
+            if cloud_rid and not asset.cloud_resource_id:
+                asset.cloud_resource_id = cloud_rid
+            if getattr(f, "os", None):
+                asset.os = f.os
+            if getattr(f, "mac_address", None):
+                asset.mac_address = f.mac_address
+        else:
+            asset = Asset(
+                ip_address=ip or None,
+                hostname=f.asset_hostname,
+                cloud_resource_id=cloud_rid,
+                identity_type="cloud_resource" if cloud_rid else "host",
+                location_type="cloud" if cloud_rid else None,
+                os=getattr(f, "os", None),
+                mac_address=getattr(f, "mac_address", None),
+                source=source,
+                first_seen=now,
+                last_seen=now,
+            )
+            db.add(asset)
+            db.flush()
+
+        asset_cache[cache_key] = asset
+
+    # ── Phase 2: bulk load existing vulnerabilities (1 query instead of N) ───
+    asset_ids = [a.id for a in asset_cache.values()]
+    existing_vulns: dict[tuple, Vulnerability] = {}
+    if asset_ids:
+        for v in db.query(Vulnerability).filter(Vulnerability.asset_id.in_(asset_ids)).all():
+            existing_vulns[(v.asset_id, v.plugin_id or "", v.port, v.protocol)] = v
+
+    # ── Phase 3: upsert vulnerabilities using in-memory dict lookup ───────────
     seen_vuln_keys: set = set()
 
     for f in findings:
         cloud_rid = getattr(f, "cloud_resource_id", None)
         ip = f.asset_ip or ""
-
         if not cloud_rid and not ip:
             continue
 
-        cache_key = cloud_rid or ip
-
-        if cache_key not in asset_cache:
-            asset = None
-            if cloud_rid:
-                asset = db.query(Asset).filter(Asset.cloud_resource_id == cloud_rid).first()
-            if not asset and ip:
-                asset = db.query(Asset).filter(Asset.ip_address == ip).first()
-
-            if asset:
-                asset.last_seen = now
-                asset.source = _merge_source(asset.source, source)
-                if f.asset_hostname:
-                    asset.hostname = f.asset_hostname
-                if ip and not asset.ip_address:
-                    asset.ip_address = ip
-                if cloud_rid and not asset.cloud_resource_id:
-                    asset.cloud_resource_id = cloud_rid
-                if getattr(f, "os", None):
-                    asset.os = f.os
-                if getattr(f, "mac_address", None):
-                    asset.mac_address = f.mac_address
-            else:
-                asset = Asset(
-                    ip_address=ip or None,
-                    hostname=f.asset_hostname,
-                    cloud_resource_id=cloud_rid,
-                    identity_type="cloud_resource" if cloud_rid else "host",
-                    location_type="cloud" if cloud_rid else None,
-                    os=getattr(f, "os", None),
-                    mac_address=getattr(f, "mac_address", None),
-                    source=source,
-                    first_seen=now,
-                    last_seen=now,
-                )
-                db.add(asset)
-                db.flush()
-            asset_cache[cache_key] = asset
-
-        asset = asset_cache[cache_key]
+        asset = asset_cache.get(cloud_rid or ip)
+        if not asset:
+            continue
 
         plugin_id = f.plugin_id or ""
-        vuln = (
-            db.query(Vulnerability)
-            .filter(
-                Vulnerability.asset_id == asset.id,
-                Vulnerability.plugin_id == plugin_id,
-                Vulnerability.port == f.port,
-                Vulnerability.protocol == f.protocol,
-            )
-            .first()
-        )
+        vuln_key = (asset.id, plugin_id, f.port, f.protocol)
 
-        if vuln:
+        if vuln_key in existing_vulns:
+            vuln = existing_vulns[vuln_key]
             vuln.last_seen = now
             vuln.severity = f.severity
             if f.cvss_score is not None:
@@ -160,8 +173,8 @@ def _persist_findings(db, findings, source: str):
                 last_seen=now,
             )
             db.add(vuln)
+            existing_vulns[vuln_key] = vuln  # prevent duplicate inserts in same sync
 
-        # Nessus-specific enrichment
         vuln.vpr_score = getattr(f, "vpr_score", None)
         vuln.epss_score = getattr(f, "epss_score", None)
         vuln.exploit_available = getattr(f, "exploit_available", None)
@@ -170,11 +183,11 @@ def _persist_findings(db, findings, source: str):
         vuln.scan_name = getattr(f, "scan_name", None)
         vuln.plugin_family = getattr(f, "plugin_family", None)
 
-        seen_vuln_keys.add((asset.id, plugin_id, f.port, f.protocol))
+        seen_vuln_keys.add(vuln_key)
 
     db.commit()
 
-    # Auto-resolve: vulns NOT seen in this scan for scanned assets → mark remediated
+    # ── Phase 4: auto-resolve stale vulns ─────────────────────────────────────
     scanned_asset_ids = {a.id for a in asset_cache.values()}
     if scanned_asset_ids:
         stale = (
@@ -195,17 +208,32 @@ def _persist_findings(db, findings, source: str):
         if stale:
             db.commit()
 
-    # Recalculate risk scores for touched assets
-    sev_weights = {"critical": 10, "high": 7, "medium": 4, "low": 1, "info": 0}
-    for asset in asset_cache.values():
-        open_vulns = (
-            db.query(Vulnerability)
-            .filter(Vulnerability.asset_id == asset.id, Vulnerability.status == "open")
+    # ── Phase 5: risk scores via single SQL aggregation (1 query, not N) ─────
+    if asset_ids:
+        score_rows = (
+            db.query(
+                Vulnerability.asset_id,
+                func.sum(
+                    case(
+                        (Vulnerability.severity == "critical", 10),
+                        (Vulnerability.severity == "high", 7),
+                        (Vulnerability.severity == "medium", 4),
+                        (Vulnerability.severity == "low", 1),
+                        else_=0,
+                    )
+                ).label("score"),
+            )
+            .filter(
+                Vulnerability.asset_id.in_(asset_ids),
+                Vulnerability.status == "open",
+            )
+            .group_by(Vulnerability.asset_id)
             .all()
         )
-        asset.risk_score = min(100.0, float(sum(sev_weights.get(v.severity, 0) for v in open_vulns)))
-
-    db.commit()
+        score_map = {row.asset_id: min(100.0, float(row.score or 0)) for row in score_rows}
+        for asset in asset_cache.values():
+            asset.risk_score = score_map.get(asset.id, 0.0)
+        db.commit()
 
 
 # ── Nessus configure endpoints ─────────────────────────────────────────────────
