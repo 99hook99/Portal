@@ -269,6 +269,26 @@ const CVETable = new PortalTable('cve', 'CVETable', [
   { key:'published',   label:'Published',   w:90  },
 ], () => typeof CVEPage !== 'undefined' && CVEPage.load?.());
 
+const NVDTable = new PortalTable('nvd', 'NVDTable', [
+  { key:'cve_id',        label:'CVE ID',        w:140, sort:'cve_id'        },
+  { key:'description',   label:'Description',   w:330                       },
+  { key:'severity',      label:'Severity',      w:90                        },
+  { key:'cvss_v3',       label:'CVSS v3',       w:76,  sort:'cvss_v3_score' },
+  { key:'cwe',           label:'CWE',           w:110                       },
+  { key:'published',     label:'Published',     w:95,  sort:'published'     },
+  { key:'last_modified', label:'Modified',      w:95,  sort:'last_modified' },
+], () => typeof CVEPage !== 'undefined' && CVEPage._loadNVD?.());
+
+const KEVTable = new PortalTable('kev', 'KEVTable', [
+  { key:'cve_id',     label:'CVE ID',       w:140, sort:'cve_id'        },
+  { key:'vendor',     label:'Vendor',       w:155, sort:'vendor_project' },
+  { key:'product',    label:'Product',      w:145                        },
+  { key:'name',       label:'Vulnerability',w:260                        },
+  { key:'added',      label:'Date Added',   w:100, sort:'date_added'    },
+  { key:'due',        label:'Due Date',     w:90,  sort:'due_date'      },
+  { key:'ransomware', label:'Ransomware',   w:100                        },
+], () => typeof CVEPage !== 'undefined' && CVEPage._loadKEV?.());
+
 const WebDomainsTable = new PortalTable('wd', 'WebDomainsTable', [
   { key:'domain',   label:'Domain / Hostname', w:250 },
   { key:'ip',       label:'IP Address',        w:130 },

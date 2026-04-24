@@ -159,6 +159,9 @@ def _create_indexes():
         "CREATE INDEX IF NOT EXISTS ix_vuln_status_sev  ON vulnerabilities(status, severity)",
         "CREATE INDEX IF NOT EXISTS ix_asset_ip         ON assets(ip_address)",
         "CREATE INDEX IF NOT EXISTS ix_asset_last_seen  ON assets(last_seen)",
+        "CREATE INDEX IF NOT EXISTS ix_nvd_published    ON nvd_entries(published)",
+        "CREATE INDEX IF NOT EXISTS ix_nvd_modified     ON nvd_entries(last_modified)",
+        "CREATE INDEX IF NOT EXISTS ix_kev_date_added   ON kev_entries(date_added)",
     ]
     with engine.connect() as conn:
         for sql in indexes:

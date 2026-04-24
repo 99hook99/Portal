@@ -770,6 +770,47 @@ tbody td.primary { color: var(--text-primary); font-weight: 500; }
   letter-spacing: 0.3px;
 }
 
+/* ── Page sub-tabs (CVE / Assets sub-sections) ───────────────*/
+
+.page-subtabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.page-subtab {
+  padding: 9px 18px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
+  margin-bottom: -1px;
+}
+.page-subtab:hover  { color: var(--text-primary); }
+.page-subtab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Shared table row / cell helpers ────────────────────────*/
+
+.clickrow { cursor: pointer; }
+.clickrow:hover td { background: var(--bg-card-hover); }
+
+.mono-link {
+  font-family: monospace;
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 12.5px;
+}
+
+.muted-date {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 /* ── Filter Bar ──────────────────────────────────────────────*/
 
 .filter-bar {

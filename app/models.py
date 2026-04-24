@@ -158,6 +158,42 @@ class CVERecord(Base):
     affected_products = Column(Text, nullable=True)  # newline-separated
 
 
+class NVDEntry(Base):
+    __tablename__ = "nvd_entries"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    cve_id           = Column(String, unique=True, index=True)
+    description      = Column(Text, nullable=True)
+    published        = Column(DateTime, nullable=True, index=True)
+    last_modified    = Column(DateTime, nullable=True, index=True)
+    cvss_v3_score    = Column(Float,  nullable=True)
+    cvss_v3_vector   = Column(String, nullable=True)
+    cvss_v3_severity = Column(String, nullable=True)
+    cvss_v2_score    = Column(Float,  nullable=True)
+    cvss_v2_severity = Column(String, nullable=True)
+    cwe              = Column(String, nullable=True)
+    references       = Column(Text,   nullable=True)   # JSON array of URLs
+    affected_products = Column(Text,  nullable=True)   # JSON array of CPE strings
+    last_fetched     = Column(DateTime, default=datetime.utcnow)
+
+
+class KEVEntry(Base):
+    __tablename__ = "kev_entries"
+
+    id                 = Column(Integer, primary_key=True, index=True)
+    cve_id             = Column(String, unique=True, index=True)
+    vendor_project     = Column(String, nullable=True)
+    product            = Column(String, nullable=True)
+    vulnerability_name = Column(String, nullable=True)
+    date_added         = Column(DateTime, nullable=True, index=True)
+    short_description  = Column(Text,   nullable=True)
+    required_action    = Column(Text,   nullable=True)
+    due_date           = Column(DateTime, nullable=True)
+    known_ransomware   = Column(String, nullable=True)  # "Known" or "Unknown"
+    notes              = Column(Text,   nullable=True)
+    last_fetched       = Column(DateTime, default=datetime.utcnow)
+
+
 class Scanner(Base):
     __tablename__ = "scanners"
 
